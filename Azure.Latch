@@ -1,3 +1,4 @@
+loadstring(game:HttpGet("https://raw.githubusercontent.com/weatherwess-lgtm/Azure/refs/heads/main/Yba-AzureLatch"))() 
 local pad = Instance.new("Part")
 pad.Size = Vector3.new(10000, 1, 10000)
 pad.Position = Vector3.new(0, -45, 0)
@@ -6,4 +7,3 @@ pad.Color = Color3.fromRGB(255, 255, 255)
 pad.Transparency = 0.5
 pad.Name = "WhitePad"
 pad.Parent = game.Workspace
-loadstring(game:HttpGet("https://raw.githubusercontent.com/weatherwess-lgtm/Azure/refs/heads/main/Yba-AzureLatch"))() 

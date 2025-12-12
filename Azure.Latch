@@ -1,4 +1,5 @@
-loadstring(game:HttpGet("https://raw.githubusercontent.com/weatherwess-lgtm/Azure/refs/heads/main/Yba-AzureLatch"))() 
+loadstring(game:HttpGet("https://raw.githubusercontent.com/weatherwess-lgtm/Azure/refs/heads/main/Yba-AzureLatch"))()
+wait(3)
 local pad = Instance.new("Part")
 pad.Size = Vector3.new(10000, 1, 10000)
 pad.Position = Vector3.new(0, -45, 0)

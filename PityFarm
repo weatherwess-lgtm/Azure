@@ -1,0 +1,708 @@
+local WindUI
+do
+    local ok, result = pcall(function()
+        if typeof(script) == "Instance" and script:FindFirstChild("src") and script.src:FindFirstChild("Init") then
+            return require(script.src.Init)
+        end
+        return nil
+    end)
+
+    if ok and result then
+        WindUI = result
+    else
+        local url = "https://raw.githubusercontent.com/Footagesus/WindUI/main/dist/main.lua"
+        local httpOk, httpResult = pcall(function()
+            return game:HttpGet(url)
+        end)
+
+        if not httpOk then
+            warn("Failed to HttpGet WindUI: " .. tostring(httpResult))
+        else
+            if type(httpResult) ~= "string" or #httpResult == 0 then
+                warn("WindUI HttpGet returned empty/non-string result.")
+            else
+                local loadOk, loadResult = pcall(loadstring, httpResult)
+                if not loadOk then
+                    warn("Failed to loadstring WindUI: " .. tostring(loadResult))
+                elseif type(loadResult) ~= "function" then
+                    warn("WindUI loadstring did not return a function (got " .. typeof(loadResult) .. ")")
+                else
+                    local execOk, execResult = pcall(loadResult)
+                    if execOk then
+                        WindUI = execResult
+                    else
+                        warn("Failed to execute WindUI loader function: " .. tostring(execResult))
+                    end
+                end
+            end
+        end
+    end
+
+    task.wait()
+end
+
+if not WindUI then
+    warn("WindUI failed to load completely. Script may not function.")
+    return
+end
+
+local player = game.Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local v3 = Vector3.new
+local cf = CFrame.new
+
+local function cleanupOld()
+    local guisToDestroy = {"DiabloUI", "CancelAFK"}
+    for _, name in ipairs(guisToDestroy) do
+        local gui = player.PlayerGui:FindFirstChild(name)
+        if gui then gui:Destroy() end
+    end
+    
+    local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+    if itemsFolder then
+        for _, v in pairs(itemsFolder:GetChildren()) do
+            local hl = v:FindFirstChild("ItemESP")
+            if hl then hl:Destroy() end
+            local bb = v:FindFirstChild("ItemESPName")
+            if bb then bb:Destroy() end
+        end
+    end
+    
+    for _, plr in pairs(game.Players:GetPlayers()) do
+        if plr.Character then
+            local hl = plr.Character:FindFirstChild("PlayerESP")
+            if hl then hl:Destroy() end
+            local bb = plr.Character:FindFirstChild("PlayerESPName")
+            if bb then bb:Destroy() end
+        end
+    end
+    
+    if player.Character then
+        for _, part in ipairs(player.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+    end
+end
+cleanupOld()
+
+local Window = WindUI:CreateWindow({
+    Title = "YBA Pity Farm",
+    Icon = "cat",
+    Author = "By - Azure",
+    Folder = "yba_stand_farming",
+    NewElements = true,
+    HideSearchBar = true,
+    OpenButton = {
+        Title = "Open Stand Farm",
+        CornerRadius = UDim.new(1,0),
+        StrokeThickness = 3,
+        Enabled = true,
+        Draggable = true,
+        OnlyMobile = false,
+        Color = ColorSequence.new(
+            Color3.fromHex("#30FF6A"),
+            Color3.fromHex("#e7ff2f")
+        )
+    }
+})
+
+Window:SetToggleKey(Enum.KeyCode.K)
+
+local Util = {
+    States = {};
+    Ints = {};
+    Strings = {};
+    Tables = {};
+    Tasks = {};
+    Services = setmetatable({}, {__index = function(self, service)
+        local GotService = game:GetService(service)
+        rawset(self, service, GotService)
+        return GotService
+    end});
+}
+
+function Util:GetPlayer()
+    return self.Services.Players.LocalPlayer
+end
+
+function Util:GetCharacter()
+    return self:GetPlayer().Character or self:GetPlayer().CharacterAdded:Wait()
+end
+
+function Util:GetHRP()
+    local Character = self:GetCharacter()
+    return Character and Character:FindFirstChild("HumanoidRootPart")
+end
+
+function Util:GetHumanoid()
+    local Character = self:GetCharacter()
+    return Character and Character:FindFirstChildWhichIsA("Humanoid")
+end
+
+function Util:SetState(key, value)
+    self.States[key] = {Value = value}
+end
+
+function Util:GetState(key)
+    return self.States[key] and self.States[key].Value or false
+end
+
+function Util:SetInt(key, value)
+    self.Ints[key] = {Value = value}
+end
+
+function Util:GetInt(key, default)
+    return self.Ints[key] and self.Ints[key].Value or default or 0
+end
+
+function Util:SetTable(key, value)
+    self.Tables[key] = {Value = value}
+end
+
+function Util:GetTable(key)
+    return self.Tables[key] and self.Tables[key].Value or {}
+end
+
+function Util:InsertTable(key, value)
+    local tbl = self:GetTable(key)
+    table.insert(tbl, value)
+    self:SetTable(key, tbl)
+end
+
+function Util:RemoveTable(key, value)
+    local tbl = self:GetTable(key)
+    local pos = table.find(tbl, value)
+    if pos then table.remove(tbl, pos) end
+    self:SetTable(key, tbl)
+end
+
+function Util:FindTable(key, value)
+    return table.find(self:GetTable(key), value)
+end
+
+function Util:AddTask(name, task)
+    self.Tasks[name] = task
+end
+
+function Util:DisconnectTask(name)
+    if self.Tasks[name] then
+        pcall(function() self.Tasks[name]:Disconnect() end)
+        self.Tasks[name] = nil
+    end
+end
+
+function Util:CountItem(itemName)
+    local Backpack = self:GetPlayer().Backpack
+    local count = 0
+    if Backpack then
+        for _, v in pairs(Backpack:GetChildren()) do
+            if v.Name == itemName then count = count + 1 end
+        end
+    end
+    local Character = self:GetPlayer().Character
+    if Character then
+        for _, v in pairs(Character:GetChildren()) do
+            if v.Name == itemName then count = count + 1 end
+        end
+    end
+    return count
+end
+
+function Util:HasStand()
+    return self:GetPlayer().PlayerStats.Stand.Value ~= "None"
+end
+
+function Util:CheckStand()
+    return self:GetPlayer().PlayerStats.Stand.Value
+end
+
+function Util:CheckShiny()
+    local Character = self:GetCharacter()
+    if Character and Character:FindFirstChild("RemoteFunction") then
+        local ok, res = pcall(function()
+            return Character.RemoteFunction:InvokeServer("ReturnStandSkin", "Stand")
+        end)
+        return ok and (res or "None") or "None"
+    end
+    return "None"
+end
+
+function Util:HasShiny()
+    local shiny = self:CheckShiny()
+    return shiny ~= "None" and shiny ~= nil
+end
+
+function Util:IsMax(itemName)
+    local max = {
+        ["Diamond"] = 30, ["Gold Coin"] = 45, ["Mysterious Arrow"] = 25,
+        ["Pure Rokakaka"] = 10, ["Rokakaka"] = 25, ["Stone Mask"] = 10,
+        ["Rib Cage of The Saint's Corpse"] = 10, ["Steel Ball"] = 10,
+        ["Ancient Scroll"] = 10, ["Dio's Diary"] = 10, ["Caesar's Headband"] = 10,
+        ["Christmas Present"] = 45, ["Quinton's Glove"] = 10, ["Lucky Arrow"] = 10
+    }
+    local ok, owns = pcall(function()
+        return game:GetService("MarketplaceService"):UserOwnsGamePassAsync(self:GetPlayer().UserId, 14597778)
+    end)
+    if ok and owns then
+        for k, v in pairs(max) do max[k] = v * 2 end
+    end
+    return self:CountItem(itemName) >= (max[itemName] or 999)
+end
+
+function Util:WaitTillBackpackLoaded()
+    local Backpack = self:GetPlayer().Backpack
+    local start = tick()
+    while tick() - start < 2 do
+        if Backpack and #Backpack:GetChildren() > 0 then break end
+        task.wait(0.05)
+    end
+end
+
+function Util:LearnSkills(skills)
+    local Character = self:GetCharacter()
+    if Character and Character:FindFirstChild("RemoteFunction") then
+        for _, skill in pairs(skills) do
+            pcall(function()
+                Character.RemoteFunction:InvokeServer("LearnSkill", {
+                    Skill = skill,
+                    SkillTreeType = "Character"
+                })
+            end)
+        end
+    end
+end
+
+function Util:FindTool(itemName)
+    local player = self:GetPlayer()
+    local Backpack = player and player.Backpack
+    local Character = player and player.Character
+    if Backpack then
+        for _, v in pairs(Backpack:GetChildren()) do
+            if v:IsA("Tool") and v.Name == itemName then
+                return v
+            end
+        end
+    end
+    if Character then
+        for _, v in pairs(Character:GetChildren()) do
+            if v:IsA("Tool") and v.Name == itemName then
+                return v
+            end
+        end
+    end
+    return nil
+end
+
+function Util:EquipToolByName(itemName, timeout)
+    timeout = timeout or 5
+    local start = tick()
+    while tick() - start < timeout do
+        local tool = self:FindTool(itemName)
+        if tool and self:GetHumanoid() then
+            pcall(function() self:GetHumanoid():EquipTool(tool) end)
+            local charTool = self:GetCharacter():FindFirstChildWhichIsA("Tool")
+            if charTool and charTool.Name == itemName then
+                return true
+            end
+        end
+        task.wait(0.05)
+    end
+    return false
+end
+
+function Util:ClickUntilDialogue()
+    local start = tick()
+    while tick() - start < 6 do
+        if self:GetPlayer().PlayerGui:FindFirstChild("DialogueGui") then
+            return true
+        end
+        pcall(function()
+            if game:GetService("VirtualInputManager") then
+                game:GetService("VirtualInputManager"):SendMouseButtonEvent(0,8,0, true, nil, 1)
+            end
+        end)
+        task.wait(0.06)
+    end
+    return false
+end
+
+function Util:SelectDialogueOption1()
+    local start = tick()
+    while tick() - start < 6 do
+        local dg = self:GetPlayer().PlayerGui:FindFirstChild("DialogueGui")
+        if dg and dg.Frame and dg.Frame.Options and dg.Frame.Options:FindFirstChild("Option1") then
+            pcall(function()
+                if dg.Frame.Options.Option1.TextButton and dg.Frame.Options.Option1.TextButton.MouseButton1Click then
+                    dg.Frame.Options.Option1.TextButton.MouseButton1Click:Fire()
+                end
+            end)
+            repeat task.wait() until not self:GetPlayer().PlayerGui:FindFirstChild("DialogueGui") or tick() - start > 8
+            return true
+        end
+        task.wait(0.05)
+    end
+    return false
+end
+
+function Util:UseRoka()
+    if self:CountItem("Rokakaka") == 0 and self:CountItem("Pure Rokakaka") == 0 then return end
+    if self:GetPlayer().PlayerStats.Stand.Value == "None" then return end
+
+    self:WaitTillBackpackLoaded()
+    if not self:EquipToolByName("Rokakaka", 6) then
+        self:EquipToolByName("Pure Rokakaka", 6)
+    end
+
+    if self:ClickUntilDialogue() then
+        self:SelectDialogueOption1()
+    end
+
+    self:GetPlayer().CharacterAdded:Wait()
+    task.wait(0.25)
+end
+
+function Util:UseArrow()
+    if self:CountItem("Mysterious Arrow") == 0 and self:CountItem("Lucky Arrow") == 0 then return end
+    if self:GetPlayer().PlayerStats.Stand.Value ~= "None" then return end
+
+    self:WaitTillBackpackLoaded()
+    if not self:EquipToolByName("Mysterious Arrow", 6) then
+        self:EquipToolByName("Lucky Arrow", 6)
+    end
+
+    if self:ClickUntilDialogue() then
+        self:SelectDialogueOption1()
+    end
+
+    self:GetPlayer().CharacterAdded:Wait()
+    task.wait(0.25)
+end
+
+function Util:UseRib()
+    local args = {
+        [1] = "EndDialogue",
+        [2] = {
+            ["NPC"] = "Rib Cage of The Saint's Corpse",
+            ["Option"] = "Option1",
+            ["Dialogue"] = "Dialogue2"
+        }
+    }
+    pcall(function()
+        if self:GetCharacter() and self:GetCharacter().RemoteEvent then
+            self:GetCharacter().RemoteEvent:FireServer(unpack(args))
+        end
+    end)
+end
+
+function Util:FarmItems(itemList)
+    for _, itemName in pairs(itemList) do
+        if self:CountItem(itemName) == 0 and not self:IsMax(itemName) then
+            local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+            if itemsFolder then
+                for _, item in pairs(itemsFolder:GetChildren()) do
+                    if item.Name == itemName then
+                        local prompt = item:FindFirstChild("ProximityPrompt")
+                        if prompt and item.PrimaryPart then
+                            local start = tick()
+                            self:GetHRP().CFrame = item.PrimaryPart.CFrame - v3(0, 10, 0)
+                            repeat
+                                task.wait()
+                                pcall(function() fireproximityprompt(prompt) end)
+                                if item.PrimaryPart then
+                                    self:GetHRP().CFrame = item.PrimaryPart.CFrame - v3(0, 10, 0)
+                                end
+                            until item.Parent ~= itemsFolder or tick() - start >= 5
+                            task.wait(0.6)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function Util:Stats()
+    local skills = {"Agility I", "Agility II", "Agility III", "Worthiness"}
+    if self:GetState("Rib Farm") then
+        table.insert(skills, "Worthiness II")
+        table.insert(skills, "Worthiness III")
+        table.insert(skills, "Worthiness IV")
+        table.insert(skills, "Worthiness V")
+    end
+    self:LearnSkills(skills)
+end
+
+Util:SetState("Stand Farming", false)
+Util:SetState("Rib Farm", false)
+Util:SetState("Arrow Pity Farm", false)
+Util:SetState("Rib Pity Farm", false)
+Util:SetState("Use Redeemed", false)
+Util:SetState("Keep any shiny", false)
+Util:SetInt("Pity Amount", 20)
+Util:SetTable("Stands", {})
+Util:SetTable("Shinys", {})
+
+-- Create Single Tab: Stand Farming
+local StandFarmTab = Window:Tab({
+    Title = "Stand Farming",
+    Icon = "star"
+})
+
+local SettingsSection = StandFarmTab:Section({
+    Title = "Farm Settings"
+})
+
+SettingsSection:Toggle({
+    Flag = "ArrowPityFarm",
+    Title = "Arrow Pity Farm",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Arrow Pity Farm", State)
+        if State then
+            Window:Notify({
+                Title = "Warning",
+                Content = "Requires Stand Farm enabled",
+                Icon = "alert-triangle"
+            })
+        end
+    end
+})
+
+SettingsSection:Toggle({
+    Flag = "RibPityFarm",
+    Title = "Rib Pity Farm",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Rib Pity Farm", State)
+        if State then
+            Window:Notify({
+                Title = "Warning",
+                Content = "Requires Rib Farm enabled",
+                Icon = "alert-triangle"
+            })
+        end
+    end
+})
+
+SettingsSection:Slider({
+    Flag = "PityAmount",
+    Title = "Pity Amount",
+    Step = 1,
+    Value = {
+        Min = 20,
+        Max = 125,
+        Default = 20
+    },
+    Callback = function(Value)
+        Util:SetInt("Pity Amount", Value)
+    end
+})
+
+SettingsSection:Toggle({
+    Flag = "UseRedeemed",
+    Title = "Use Redeemed Items",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Use Redeemed", State)
+    end
+})
+
+SettingsSection:Toggle({
+    Flag = "KeepShiny",
+    Title = "Keep Any Shiny",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Keep any shiny", State)
+    end
+})
+
+local StandFarmSection = StandFarmTab:Section({
+    Title = "Stand Farm"
+})
+
+StandFarmSection:Toggle({
+    Flag = "StandFarm",
+    Title = "Enable Stand Farm",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Stand Farming", State)
+        
+        if State then
+            pcall(function() Util:GetHRP().CFrame = cf(v3(-324, -32, 47)) end)
+            if not Util.Tasks.SafeFarm then
+                Util:AddTask("SafeFarm", Util:GetPlayer().CharacterAdded:Connect(function(Char)
+                    task.wait(0.15)
+                    pcall(function() Char.PrimaryPart.CFrame = cf(v3(-324, -32, 47)) end)
+                end))
+            end
+
+            task.spawn(function()
+                task.wait(0.2)
+                if (Util:CountItem("Rokakaka") > 0 or Util:CountItem("Pure Rokakaka") > 0) and (Util:CountItem("Mysterious Arrow") > 0 or Util:CountItem("Lucky Arrow") > 0) then
+                    pcall(function() Util:UseRoka() end)
+                    pcall(function() Util:WaitTillBackpackLoaded() end)
+                    pcall(function() Util:UseArrow() end)
+                end
+            end)
+        else
+            Util:DisconnectTask("SafeFarm")
+        end
+        
+        while Util:GetState("Stand Farming") do
+            if Util:CountItem("Mysterious Arrow") == 0 or Util:CountItem("Rokakaka") == 0 then
+                Util:FarmItems({"Mysterious Arrow", "Rokakaka"})
+            end
+            
+            if Util:HasStand() and Util:FindTable("Stands", Util:CheckStand()) then
+                Window:Notify({
+                    Title = "Stand Obtained!",
+                    Content = Util:CheckStand(),
+                    Icon = "check"
+                })
+                break
+            end
+            
+            if Util:HasStand() then
+                Util:UseRoka()
+                repeat task.wait() until not Util:HasStand()
+            else
+                Util:Stats()
+                Util:UseArrow()
+                repeat task.wait() until Util:HasStand()
+            end
+            
+            task.wait(1)
+        end
+    end
+})
+
+local RibFarmSection = StandFarmTab:Section({
+    Title = "Rib Farm"
+})
+
+RibFarmSection:Toggle({
+    Flag = "RibFarm",
+    Title = "Enable Rib Farm",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Rib Farm", State)
+        
+        if State then
+            pcall(function() Util:GetHRP().CFrame = cf(v3(-324, -32, 47)) end)
+            if not Util.Tasks.SafeFarm then
+                Util:AddTask("SafeFarm", Util:GetPlayer().CharacterAdded:Connect(function(Char)
+                    task.wait(0.15)
+                    pcall(function() Char.PrimaryPart.CFrame = cf(v3(-324, -32, 47)) end)
+                end))
+            end
+        else
+            Util:DisconnectTask("SafeFarm")
+        end
+        
+        while Util:GetState("Rib Farm") do
+            if Util:CountItem("Rib Cage of The Saint's Corpse") == 0 then
+                Util:FarmItems({"Rib Cage of The Saint's Corpse"})
+            end
+            
+            Util:Stats()
+            Util:UseRib()
+            repeat task.wait() until Util:HasStand()
+            
+            task.wait(1)
+        end
+    end
+})
+
+local StandSelectSection = StandFarmTab:Section({
+    Title = "Stand Selection (28 stands)"
+})
+
+local standNames = {"Whitesnake", "Stone Free", "Star Platinum", "The World", "Crazy Diamond", "Killer Queen", "Gold Experience", "King Crimson", "Silver Chariot", "Hermit Purple", "The Hand", "Purple Haze", "Cream", "Hierophant Green", "Magician's Red", "White Album", "Aerosmith", "Six Pistols", "Beach Boy", "Mr. President", "Sticky Fingers", "Anubis", "Red Hot Chili Pepper", "Scary Monsters", "The World Alternate Universe", "D4C", "Tusk ACT 1", "Soft & Wet"}
+
+for _, stand in pairs(standNames) do
+    StandSelectSection:Toggle({
+        Flag = "Stand_" .. stand:gsub("%s", ""),
+        Title = stand,
+        Default = false,
+        Callback = function(State)
+            if State then
+                if not Util:FindTable("Stands", stand) then
+                    Util:InsertTable("Stands", stand)
+                end
+            else
+                Util:RemoveTable("Stands", stand)
+            end
+        end
+    })
+end
+
+local InfoSection = StandFarmTab:Section({
+    Title = "Stand Info"
+})
+
+local PityLabel = InfoSection:Label({
+    Title = "Pity: 0 (1%)"
+})
+
+local StandLabel = InfoSection:Label({
+    Title = "Stand: None"
+})
+
+local ShinyLabel = InfoSection:Label({
+    Title = "Shiny: None"
+})
+
+task.spawn(function()
+    while task.wait(1) do
+        pcall(function()
+            local pity = Util:GetPlayer().PlayerStats.PityCount.Value
+            PityLabel:UpdateAsset("Pity: " .. pity .. " (" .. ((pity * 0.04) + 1) .. "%)")
+            StandLabel:UpdateAsset("Stand: " .. Util:CheckStand())
+            ShinyLabel:UpdateAsset("Shiny: " .. (Util:CheckShiny() or "None"))
+        end)
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if Util:GetState("Stand Farming") and Util:GetState("Arrow Pity Farm") then
+            local targetPity = Util:GetInt("Pity Amount")
+            local currentPity = Util:GetPlayer().PlayerStats.PityCount.Value
+            
+            if currentPity >= targetPity then
+                Util:GetPlayer():Kick("Reached target pity: " .. targetPity)
+            end
+            
+            if Util:HasStand() and currentPity < targetPity then
+                Util:UseRoka()
+                repeat task.wait() until not Util:HasStand()
+            elseif not Util:HasStand() then
+                Util:Stats()
+                Util:UseArrow()
+                repeat task.wait() until Util:HasStand()
+            end
+        end
+        
+        if Util:GetState("Rib Farm") and Util:GetState("Rib Pity Farm") then
+            local targetPity = Util:GetInt("Pity Amount")
+            local currentPity = Util:GetPlayer().PlayerStats.PityCount.Value
+            
+            if currentPity >= targetPity then
+                Util:GetPlayer():Kick("Reached target pity: " .. targetPity)
+            end
+            
+            Util:Stats()
+            Util:UseRib()
+            repeat task.wait() until Util:HasStand()
+        end
+    end
+end)
+
+Window:Notify({
+    Title = "Stand Farming",
+    Content = "Script loaded successfully!",
+    Icon = "check"
+})

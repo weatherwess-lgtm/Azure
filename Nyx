@@ -1,0 +1,213 @@
+-- LocalScript: Welcome Nyx with decal image
+-- Put under StarterPlayerScripts (Client)
+
+local TweenService = game:GetService("TweenService")
+local ContentProvider = game:GetService("ContentProvider")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+-- ==== CONFIG ====
+local DECAL_ID = "116963005802412" -- replace with your decal ID if needed
+local SHOW_TIME = 3.0              -- how long the welcome stays visible (seconds)
+local BOB_AMPLITUDE = 6            -- bob distance in pixels
+local BOB_TIME = 1.4               -- bob duration (one direction)
+-- =================
+
+local function rbxAsset(id) return "rbxassetid://" .. tostring(id) end
+local function rbxThumb(id, w, h) return ("rbxthumb://type=Asset&id=%s&w=%d&h=%d"):format(id, w or 256, h or 256) end
+
+-- Wait for PlayerGui properly
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- Create / find ScreenGui
+local loadingGui = playerGui:FindFirstChild("NyxWelcomeGui")
+if not loadingGui then
+    loadingGui = Instance.new("ScreenGui")
+    loadingGui.Name = "NyxWelcomeGui"
+    loadingGui.ResetOnSpawn = false
+    loadingGui.Parent = playerGui
+end
+
+-- Create main frame (or reuse)
+local loadingFrame = loadingGui:FindFirstChild("LoadingFrame")
+if not loadingFrame then
+    loadingFrame = Instance.new("Frame")
+    loadingFrame.Name = "LoadingFrame"
+    loadingFrame.Size = UDim2.new(0.44, 0, 0.28, 0)
+    loadingFrame.Position = UDim2.new(0.5, 0, -0.25, 0) -- start off-screen (slide in)
+    loadingFrame.AnchorPoint = Vector2.new(0.5, 0)
+    loadingFrame.BackgroundColor3 = Color3.fromRGB(18, 22, 38)
+    loadingFrame.BackgroundTransparency = 0.08
+    loadingFrame.BorderSizePixel = 0
+    loadingFrame.Parent = loadingGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 14)
+    corner.Parent = loadingFrame
+
+    local stroke = Instance.new("UIStroke")
+    stroke.LineJoinMode = Enum.LineJoinMode.Round
+    stroke.Thickness = 1
+    stroke.Color = Color3.fromRGB(70, 80, 120)
+    stroke.Transparency = 0.85
+    stroke.Parent = loadingFrame
+end
+
+-- Remove previous children with same names to avoid duplicates
+for _, child in ipairs(loadingFrame:GetChildren()) do
+    if child.Name == "NyxImage" or child.Name == "Logo" or child.Name == "WelcomeLabel" or child.Name == "LoadingLabel" then
+        child:Destroy()
+    end
+end
+
+-- Small logo at top-left
+local logo = Instance.new("ImageLabel")
+logo.Name = "Logo"
+logo.Size = UDim2.new(0, 36, 0, 36)
+logo.Position = UDim2.new(0, 12, 0, 12)
+logo.BackgroundTransparency = 1
+logo.Image = "" -- set below after preload
+logo.ImageTransparency = 1
+logo.Parent = loadingFrame
+local logoCorner = Instance.new("UICorner", logo)
+logoCorner.CornerRadius = UDim.new(0, 8)
+
+-- Main center image
+local image = Instance.new("ImageLabel")
+image.Name = "NyxImage"
+image.AnchorPoint = Vector2.new(0.5, 0)
+image.Position = UDim2.new(0.5, 0, 0, 18)
+image.Size = UDim2.new(0, 92, 0, 92)
+image.BackgroundTransparency = 1
+image.Image = "" -- set below after preload
+image.ImageTransparency = 1 -- start hidden
+image.Rotation = -25        -- start rotated
+image.Parent = loadingFrame
+local imgCorner = Instance.new("UICorner", image)
+imgCorner.CornerRadius = UDim.new(0, 16)
+
+-- Welcome text
+local welcomeLabel = Instance.new("TextLabel")
+welcomeLabel.Name = "WelcomeLabel"
+welcomeLabel.BackgroundTransparency = 1
+welcomeLabel.Position = UDim2.new(0, 0, 0, 120)
+welcomeLabel.Size = UDim2.new(1, 0, 0, 28)
+welcomeLabel.Font = Enum.Font.GothamBold
+welcomeLabel.TextColor3 = Color3.fromRGB(245, 245, 255)
+welcomeLabel.TextSize = 24
+welcomeLabel.Text = "Welcome Nyx"
+welcomeLabel.TextTransparency = 1
+welcomeLabel.TextXAlignment = Enum.TextXAlignment.Center
+welcomeLabel.Parent = loadingFrame
+
+-- Loading/dots text
+local loadingLabel = Instance.new("TextLabel")
+loadingLabel.Name = "LoadingLabel"
+loadingLabel.BackgroundTransparency = 1
+loadingLabel.Position = UDim2.new(0, 0, 0, 150)
+loadingLabel.Size = UDim2.new(1, 0, 0, 20)
+loadingLabel.Font = Enum.Font.Gotham
+loadingLabel.TextColor3 = Color3.fromRGB(180, 200, 255)
+loadingLabel.TextSize = 15
+loadingLabel.Text = "Initialising..."
+loadingLabel.TextTransparency = 0.6
+loadingLabel.TextXAlignment = Enum.TextXAlignment.Center
+loadingLabel.Parent = loadingFrame
+
+-- PRELOAD: try rbxassetid first, then rbxthumb as fallback
+local function tryPreload(id)
+    local asset1 = rbxAsset(id)
+    local asset2 = rbxThumb(id, 420, 420)
+
+    -- try first
+    local ok1, err1 = pcall(function() ContentProvider:PreloadAsync({ asset1 }) end)
+    if ok1 then
+        return asset1
+    end
+
+    -- fallback to thumb
+    local ok2, err2 = pcall(function() ContentProvider:PreloadAsync({ asset2 }) end)
+    if ok2 then
+        return asset2
+    end
+
+    -- both failed
+    warn("NyxWelcomeGui: failed to preload images. Errors:", err1, err2)
+    return nil
+end
+
+local chosenUrl = tryPreload(DECAL_ID)
+if chosenUrl then
+    -- apply to both image and logo
+    image.Image = chosenUrl
+    logo.Image = chosenUrl
+else
+    -- fallback: clear images and show message
+    image.Image = ""
+    logo.Image = ""
+    welcomeLabel.Text = "Welcome Nyx (image unavailable)"
+end
+
+-- Tween helper
+local function tween(obj, props, time, style, dir)
+    style = style or Enum.EasingStyle.Quad
+    dir = dir or Enum.EasingDirection.Out
+    local info = TweenInfo.new(time, style, dir)
+    local t = TweenService:Create(obj, info, props)
+    t:Play()
+    return t
+end
+
+-- Entrance: frame slide-in
+tween(loadingFrame, {Position = UDim2.new(0.5, 0, 0.1, 0)}, 0.9, Enum.EasingStyle.Bounce, Enum.EasingDirection.Out)
+
+-- Entrance tweens for elements
+task.delay(0.12, function()
+    if logo and logo.Parent then tween(logo, {ImageTransparency = 0}, 0.55, Enum.EasingStyle.Quad) end
+end)
+task.delay(0.18, function()
+    if image and image.Parent then tween(image, {ImageTransparency = 0, Size = UDim2.new(0, 112, 0, 112), Rotation = 0}, 0.7, Enum.EasingStyle.Back, Enum.EasingDirection.Out) end
+end)
+task.delay(0.3, function()
+    tween(welcomeLabel, {TextTransparency = 0}, 0.6, Enum.EasingStyle.Back)
+    tween(loadingLabel, {TextTransparency = 0}, 0.6, Enum.EasingStyle.Quad)
+end)
+
+-- Bobbing loop for the image while showing
+local showing = true
+task.spawn(function()
+    task.wait(0.9) -- wait until entrance mostly done
+    while showing and image and image.Parent do
+        local up = TweenService:Create(image, TweenInfo.new(BOB_TIME, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Position = UDim2.new(0.5, 0, 0, 18 - BOB_AMPLITUDE)})
+        local down = TweenService:Create(image, TweenInfo.new(BOB_TIME, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Position = UDim2.new(0.5, 0, 0, 18 + BOB_AMPLITUDE)})
+        up:Play(); up.Completed:Wait()
+        if not showing then break end
+        down:Play(); down.Completed:Wait()
+    end
+end)
+
+-- Loading dots animation (non-blocking)
+task.spawn(function()
+    local dotsCount = 0
+    while loadingGui and loadingGui.Parent and (not loadingGui.Destroying) do
+        dotsCount = (dotsCount % 3) + 1
+        loadingLabel.Text = "Loading" .. string.rep(".", dotsCount)
+        task.wait(0.45)
+    end
+end)
+
+-- Keep visible for SHOW_TIME
+task.wait(SHOW_TIME)
+
+-- Exit animations
+showing = false
+tween(loadingFrame, {BackgroundTransparency = 1}, 0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+tween(image, {ImageTransparency = 1, Size = UDim2.new(0, 36, 0, 36), Rotation = 40, Position = UDim2.new(0.5, 0, 0, 8)}, 0.55, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+tween(logo, {ImageTransparency = 1, Size = UDim2.new(0, 18, 0, 18)}, 0.45)
+tween(welcomeLabel, {TextTransparency = 1, Position = UDim2.new(0, 0, 0, 135)}, 0.45)
+tween(loadingLabel, {TextTransparency = 1, Position = UDim2.new(0, 0, 0, 165)}, 0.45)
+
+task.wait(0.65)
+if loadingGui and loadingGui.Parent then
+    loadingGui:Destroy()
+end

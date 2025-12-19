@@ -1,0 +1,227 @@
+local executor = identifyexecutor() or getexecutorname() or "Unknown"
+local badExecutors = {"Xeno", "Solara", "JJsploit", "bunni", "delta", "Krnl", "Velocity", "Wave", "Volcano"}
+local isBadExecutor = false
+for _, bad in ipairs(badExecutors) do
+    if executor:lower():find(bad:lower()) then
+        isBadExecutor = true
+        break
+    end
+end
+local player = game.Players.LocalPlayer
+local playerGui = player.PlayerGui
+local function cleanupOld()
+    -- GUIs
+    local guisToDestroy = {"AzureWarningUI", "AzureLoadingUI", "AzureUI", "CancelAFK"}
+    for _, name in ipairs(guisToDestroy) do
+        local gui = playerGui:FindFirstChild(name)
+        if gui then gui:Destroy() end
+    end
+    local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+    if itemsFolder then
+        for _, v in pairs(itemsFolder:GetChildren()) do
+            local hl = v:FindFirstChild("ItemESP")
+            if hl then hl:Destroy() end
+            local bb = v:FindFirstChild("ItemESPName")
+            if bb then bb:Destroy() end
+        end
+    end
+    for _, plr in pairs(game.Players:GetPlayers()) do
+        if plr.Character then
+            local hl = plr.Character:FindFirstChild("PlayerESP")
+            if hl then hl:Destroy() end
+            local bb = plr.Character:FindFirstChild("PlayerESPName")
+            if bb then bb:Destroy() end
+        end
+    end
+    if player.Character then
+        for _, part in ipairs(player.Character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+    end
+    if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+        local hrp = player.Character.HumanoidRootPart
+        for _, child in ipairs(hrp:GetChildren()) do
+            if child:IsA("BodyVelocity") or child:IsA("BodyGyro") then
+                child:Destroy()
+            end
+        end
+    end
+    local char = player.Character
+    if char then
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            for _, c in ipairs(hrp:GetChildren()) do
+                if c.Name:match("^Stick_") then c:Destroy() end
+            end
+        end
+        local function getStand()
+            if not char then return nil end
+            for _, child in ipairs(char:GetChildren()) do
+                if child:IsA("Model") and child:FindFirstChild("HumanoidRootPart") and child ~= char then
+                    return child
+                end
+            end
+            return nil
+        end
+        local stand = getStand()
+        if stand then
+            local standHRP = stand:FindFirstChild("HumanoidRootPart")
+            if standHRP then
+                for _, c in ipairs(standHRP:GetChildren()) do
+                    if c.Name:match("^Stick_") then c:Destroy() end
+                end
+            end
+        end
+    end
+    local camera = workspace.CurrentCamera
+    camera.CameraType = Enum.CameraType.Custom
+    camera.CameraSubject = player.Character and player.Character:FindFirstChild("Humanoid")
+    local function getItemContainer()
+        local spawns = workspace:FindFirstChild("Item_Spawns")
+        if not spawns then return nil end
+        return spawns:FindFirstChild("Items")
+    end
+    local container = getItemContainer()
+    if container then
+        for _, v in pairs(container:GetChildren()) do
+            local prox = v:FindFirstChild("ProximityPrompt")
+            if prox then
+                prox.HoldDuration = 0.5 -- default
+            end
+        end
+    end
+    local lighting = game.Lighting
+    lighting.Brightness = 1
+    lighting.ClockTime = 14
+    lighting.FogEnd = 100000
+    lighting.GlobalShadows = true
+    lighting.Ambient = Color3.fromRGB(128, 128, 128)
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Highlight") then
+            obj.Enabled = true
+        end
+    end
+    if lighting:FindFirstChild("Bloom") then lighting.Bloom.Enabled = true end
+    if lighting:FindFirstChild("SunRays") then lighting.SunRays.Enabled = true end
+    if lighting:FindFirstChild("DepthOfField") then lighting.DepthOfField.Enabled = true end
+end
+cleanupOld()
+if isBadExecutor then
+    local warningGui = Instance.new("ScreenGui")
+    warningGui.Name = "DiabloWarningUI"
+    warningGui.Parent = game.Players.LocalPlayer.PlayerGui
+    warningGui.ResetOnSpawn = false
+    warningGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    local warningFrame = Instance.new("Frame")
+    warningFrame.BackgroundTransparency = 0.2
+    warningFrame.BorderSizePixel = 0
+    warningFrame.Position = UDim2.new(0.5, -250, 0.5, -120)
+    warningFrame.Size = UDim2.new(0, 500, 0, 240)
+    warningFrame.Parent = warningGui
+    -- Gradient background
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 40)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(20, 20, 20))
+    }
+    gradient.Rotation = 45
+    gradient.Parent = warningFrame
+    local UICornerWarning = Instance.new("UICorner")
+    UICornerWarning.CornerRadius = UDim.new(0.08, 0)
+    UICornerWarning.Parent = warningFrame
+    -- Warning icon
+    local warningIcon = Instance.new("TextLabel")
+    warningIcon.BackgroundTransparency = 1
+    warningIcon.Position = UDim2.new(0.5, -30, 0, 20)
+    warningIcon.Size = UDim2.new(0, 60, 0, 60)
+    warningIcon.Font = Enum.Font.SourceSansBold
+    warningIcon.Text = "⚠️"
+    warningIcon.TextColor3 = Color3.fromRGB(255, 200, 0)
+    warningIcon.TextSize = 48
+    warningIcon.Parent = warningFrame
+    local warningLabel = Instance.new("TextLabel")
+    warningLabel.BackgroundTransparency = 1
+    warningLabel.Position = UDim2.new(0, 20, 0, 90)
+    warningLabel.Size = UDim2.new(1, -40, 0, 100)
+    warningLabel.Font = Enum.Font.GothamBold
+    warningLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
+    warningLabel.TextSize = 22
+    warningLabel.TextWrapped = true
+    warningLabel.Text = "⚠️ EXECUTOR NOT SUPPORTED ⚠️\n\nSome feature may not be supported or not work properly please switch to a different one"
+    warningLabel.TextXAlignment = Enum.TextXAlignment.Center
+    warningLabel.Parent = warningFrame
+    -- Subtle glow effect
+    local glow = Instance.new("UIStroke")
+    glow.Color = Color3.fromRGB(255, 50, 50)
+    glow.Thickness = 2
+    glow.Transparency = 0.7
+    glow.Parent = warningFrame
+    wait(math.random(4, 6))
+    warningGui:Destroy()
+end
+-- Enhanced Welcome GUI with animation
+local loadingGui = Instance.new("ScreenGui")
+loadingGui.Name = "DiabloLoadingUI"
+loadingGui.Parent = game.Players.LocalPlayer.PlayerGui
+loadingGui.ResetOnSpawn = false
+loadingGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+local loadingFrame = Instance.new("Frame")
+loadingFrame.BackgroundTransparency = 0.2
+loadingFrame.BorderSizePixel = 0
+loadingFrame.Position = UDim2.new(0.5, -175, 0.5, -90)
+loadingFrame.Size = UDim2.new(0, 350, 0, 180)
+loadingFrame.Parent = loadingGui
+-- Blue gradient for Azure theme
+local gradient = Instance.new("UIGradient")
+gradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 100, 200)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 40, 120))
+}
+gradient.Rotation = -45
+gradient.Parent = loadingFrame
+local UICornerLoading = Instance.new("UICorner")
+UICornerLoading.CornerRadius = UDim.new(0.08, 0)
+UICornerLoading.Parent = loadingFrame
+-- Azure logo/icon
+local logo = Instance.new("TextLabel")
+logo.BackgroundTransparency = 1
+logo.Position = UDim2.new(0.5, -25, 0, 15)
+logo.Size = UDim2.new(0, 50, 0, 50)
+logo.Font = Enum.Font.SourceSansBold
+logo.Text = "☁️"
+logo.TextColor3 = Color3.fromRGB(255, 255, 255)
+logo.TextSize = 36
+logo.Parent = loadingFrame
+local welcomeLabel = Instance.new("TextLabel")
+welcomeLabel.BackgroundTransparency = 1
+welcomeLabel.Position = UDim2.new(0, 0, 0, 70)
+welcomeLabel.Size = UDim2.new(1, 0, 0, 30)
+welcomeLabel.Font = Enum.Font.GothamBold
+welcomeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+welcomeLabel.TextSize = 26
+welcomeLabel.Text = "Welcome to Azure.Hub"
+welcomeLabel.TextXAlignment = Enum.TextXAlignment.Center
+welcomeLabel.Parent = loadingFrame
+local loadingLabel = Instance.new("TextLabel")
+loadingLabel.BackgroundTransparency = 1
+loadingLabel.Position = UDim2.new(0, 0, 0, 110)
+loadingLabel.Size = UDim2.new(1, 0, 0, 25)
+loadingLabel.Font = Enum.Font.Gotham
+loadingLabel.TextColor3 = Color3.fromRGB(200, 220, 255)
+loadingLabel.TextSize = 18
+loadingLabel.Text = "Initialising..."
+loadingLabel.TextXAlignment = Enum.TextXAlignment.Center
+loadingLabel.Parent = loadingFrame
+-- Loading animation
+local dotsCount = 0
+spawn(function()
+    while loadingGui.Parent do
+        dotsCount = (dotsCount % 3) + 1
+        loadingLabel.Text = "Loading" .. ("."):rep(dotsCount)
+        wait(0.4)
+    end
+end)
+wait(3)
+loadingGui:Destroy()

@@ -43,7 +43,7 @@ if isProblematic then
         warningLabel.TextColor3 = Color3.fromRGB(255, 100, 100)
         warningLabel.TextSize = 22
         warningLabel.TextWrapped = true
-        warningLabel.Text = "⚠️ EXECUTOR WARNING ⚠️\n\nYour executor may have compatibility issues. Some features might not work."
+        warningLabel.Text = "⚠️ EXECUTOR WARNING ⚠️\n\nWaning - no 2 if this pops up likely the script isnt gonna execute or it will its likely your executors problem."
         warningLabel.TextXAlignment = Enum.TextXAlignment.Center
         warningLabel.Parent = warningFrame
         

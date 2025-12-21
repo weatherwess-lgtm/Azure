@@ -1,0 +1,25 @@
+spawn(function()
+    while true do
+        wait(1)
+        pcall(function()
+            local coreGui = game:GetService("CoreGui")
+            local prompt = coreGui:FindFirstChild("RobloxPromptGui")
+            if prompt then
+                local overlay = prompt:FindFirstChild("promptOverlay")
+                if overlay then
+                    local errorPrompt = overlay:FindFirstChild("ErrorPrompt")
+                    if errorPrompt and errorPrompt.Visible then
+                        local titleFrame = errorPrompt:FindFirstChild("TitleFrame")
+                        if titleFrame then
+                            local errorTitle = titleFrame:FindFirstChild("ErrorTitle")
+                            if errorTitle and (string.lower(errorTitle.Text):find("disconnect") or string.lower(errorTitle.Text):find("kicked")) then
+                                notify("YBA Script", "Detected kick/disconnect. Rejoining the server...")
+                                TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)

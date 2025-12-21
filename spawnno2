@@ -1,0 +1,100 @@
+if not WindUI then
+    warn("WindUI failed to load. Aborting script.")
+    game.StarterGui:SetCore("SendNotification", {
+        Title = "Script Error",
+        Text = "WindUI library failed to load. Check your executor supports HttpGet/loadstring.",
+        Duration = 5
+    })
+    return
+end
+
+local executor_identifiers = {
+    identifyexecutor,
+    getexecutorname,
+    function() return "Unknown" end
+}
+
+local executor = "Unknown"
+for _, func in ipairs(executor_identifiers) do
+    if type(func) == "function" then
+        local ok, result = pcall(func)
+        if ok and result and result ~= "Unknown" then
+            executor = tostring(result)
+            break
+        end
+    end
+end
+
+local problematic_executors = {"JJsploit", "bunni", "delta"}
+local isProblematic = false
+for _, bad in ipairs(problematic_executors) do
+    if executor:lower():find(bad:lower()) then
+        isProblematic = true
+        break
+    end
+end
+
+--// Cleanup function with improved error handling
+local function cleanupOld()
+    local player = game.Players.LocalPlayer
+    if not player or not player.PlayerGui then return end
+    
+    local guisToDestroy = {"AzureWarningUI", "AzureLoadingUI", "AzureUI", "CancelAFK", "DiabloUI"}
+    for _, name in ipairs(guisToDestroy) do
+        pcall(function()
+            local gui = player.PlayerGui:FindFirstChild(name)
+            if gui then gui:Destroy() end
+        end)
+    end
+    
+    pcall(function()
+        local itemsFolder = workspace:FindFirstChild("Item_Spawns") and workspace.Item_Spawns:FindFirstChild("Items")
+        if itemsFolder then
+            for _, v in pairs(itemsFolder:GetChildren()) do
+                local hl = v:FindFirstChild("ItemESP")
+                if hl then hl:Destroy() end
+                local bb = v:FindFirstChild("ItemESPName")
+                if bb then bb:Destroy() end
+            end
+        end
+    end)
+    
+    pcall(function()
+        for _, plr in pairs(game.Players:GetPlayers()) do
+            if plr.Character then
+                local hl = plr.Character:FindFirstChild("PlayerESP")
+                if hl then hl:Destroy() end
+                local bb = plr.Character:FindFirstChild("PlayerESPName")
+                if bb then bb:Destroy() end
+            end
+        end
+    end)
+    
+    pcall(function()
+        if player.Character then
+            for _, part in ipairs(player.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                for _, child in ipairs(hrp:GetChildren()) do
+                    if child:IsA("BodyVelocity") or child:IsA("BodyGyro") then
+                        child:Destroy()
+                    end
+                end
+            end
+        end
+    end)
+    
+    pcall(function()
+        game.Lighting.Brightness = 1
+        game.Lighting.ClockTime = 14
+        game.Lighting.FogEnd = 100000
+        game.Lighting.GlobalShadows = true
+        game.Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+    end)
+end
+
+cleanupOld()

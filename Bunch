@@ -1,0 +1,278 @@
+function Util:Stats()
+    local skills = {"Agility I", "Agility II", "Agility III", "Worthiness"}
+    if self:GetState("Rib Farm") then
+        table.insert(skills, "Worthiness II")
+        table.insert(skills, "Worthiness III")
+        table.insert(skills, "Worthiness IV")
+        table.insert(skills, "Worthiness V")
+    end
+    self:LearnSkills(skills)
+end
+
+Util:SetState("Stand Farming", false)
+Util:SetState("Rib Farm", false)
+Util:SetState("Arrow Pity Farm", false)
+Util:SetState("Rib Pity Farm", false)
+Util:SetState("Use Redeemed", false)
+Util:SetState("Keep any shiny", false)
+Util:SetInt("Pity Amount", 20)
+Util:SetTable("Stands", {})
+Util:SetTable("Shinys", {})
+
+-- Create Single Tab: Stand Farming
+
+local SettingsSection = StandFarmTab:Section({
+    Title = "Farm Settings"
+})
+
+SettingsSection:Toggle({
+    Flag = "ArrowPityFarm",
+    Title = "Arrow Pity Farm",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Arrow Pity Farm", State)
+        if State then
+            Window:Notify({
+                Title = "Warning",
+                Content = "Requires Stand Farm enabled",
+                Icon = "alert-triangle"
+            })
+        end
+    end
+})
+
+SettingsSection:Toggle({
+    Flag = "RibPityFarm",
+    Title = "Rib Pity Farm",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Rib Pity Farm", State)
+        if State then
+            Window:Notify({
+                Title = "Warning",
+                Content = "Requires Rib Farm enabled",
+                Icon = "alert-triangle"
+            })
+        end
+    end
+})
+
+SettingsSection:Slider({
+    Flag = "PityAmount",
+    Title = "Pity Amount",
+    Step = 1,
+    Value = {
+        Min = 20,
+        Max = 125,
+        Default = 20
+    },
+    Callback = function(Value)
+        Util:SetInt("Pity Amount", Value)
+    end
+})
+
+SettingsSection:Toggle({
+    Flag = "UseRedeemed",
+    Title = "Use Redeemed Items",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Use Redeemed", State)
+    end
+})
+
+SettingsSection:Toggle({
+    Flag = "KeepShiny",
+    Title = "Keep Any Shiny",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Keep any shiny", State)
+    end
+})
+
+local StandFarmSection = StandFarmTab:Section({
+    Title = "Stand Farm"
+})
+
+StandFarmSection:Toggle({
+    Flag = "StandFarm",
+    Title = "Enable Stand Farm",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Stand Farming", State)
+        
+        if State then
+            pcall(function() Util:GetHRP().CFrame = cf(v3(-324, -32, 47)) end)
+            if not Util.Tasks.SafeFarm then
+                Util:AddTask("SafeFarm", Util:GetPlayer().CharacterAdded:Connect(function(Char)
+                    task.wait(0.15)
+                    pcall(function() Char.PrimaryPart.CFrame = cf(v3(-324, -32, 47)) end)
+                end))
+            end
+
+            task.spawn(function()
+                task.wait(0.2)
+                if (Util:CountItem("Rokakaka") > 0 or Util:CountItem("Pure Rokakaka") > 0) and (Util:CountItem("Mysterious Arrow") > 0 or Util:CountItem("Lucky Arrow") > 0) then
+                    pcall(function() Util:UseRoka() end)
+                    pcall(function() Util:WaitTillBackpackLoaded() end)
+                    pcall(function() Util:UseArrow() end)
+                end
+            end)
+        else
+            Util:DisconnectTask("SafeFarm")
+        end
+        
+        while Util:GetState("Stand Farming") do
+            if Util:CountItem("Mysterious Arrow") == 0 or Util:CountItem("Rokakaka") == 0 then
+                Util:FarmItems({"Mysterious Arrow", "Rokakaka"})
+            end
+            
+            if Util:HasStand() and Util:FindTable("Stands", Util:CheckStand()) then
+                Window:Notify({
+                    Title = "Stand Obtained!",
+                    Content = Util:CheckStand(),
+                    Icon = "check"
+                })
+                break
+            end
+            
+            if Util:HasStand() then
+                Util:UseRoka()
+                repeat task.wait() until not Util:HasStand()
+            else
+                Util:Stats()
+                Util:UseArrow()
+                repeat task.wait() until Util:HasStand()
+            end
+            
+            task.wait(1)
+        end
+    end
+})
+
+local RibFarmSection = StandFarmTab:Section({
+    Title = "Rib Farm"
+})
+
+RibFarmSection:Toggle({
+    Flag = "RibFarm",
+    Title = "Enable Rib Farm",
+    Default = false,
+    Callback = function(State)
+        Util:SetState("Rib Farm", State)
+        
+        if State then
+            pcall(function() Util:GetHRP().CFrame = cf(v3(-324, -32, 47)) end)
+            if not Util.Tasks.SafeFarm then
+                Util:AddTask("SafeFarm", Util:GetPlayer().CharacterAdded:Connect(function(Char)
+                    task.wait(0.15)
+                    pcall(function() Char.PrimaryPart.CFrame = cf(v3(-324, -32, 47)) end)
+                end))
+            end
+        else
+            Util:DisconnectTask("SafeFarm")
+        end
+        
+        while Util:GetState("Rib Farm") do
+            if Util:CountItem("Rib Cage of The Saint's Corpse") == 0 then
+                Util:FarmItems({"Rib Cage of The Saint's Corpse"})
+            end
+            
+            Util:Stats()
+            Util:UseRib()
+            repeat task.wait() until Util:HasStand()
+            
+            task.wait(1)
+        end
+    end
+})
+
+local StandSelectSection = StandFarmTab:Section({
+    Title = "Stand Selection (28 stands)"
+})
+
+local standNames = {"Whitesnake", "Stone Free", "Star Platinum", "The World", "Crazy Diamond", "Killer Queen", "Gold Experience", "King Crimson", "Silver Chariot", "Hermit Purple", "The Hand", "Purple Haze", "Cream", "Hierophant Green", "Magician's Red", "White Album", "Aerosmith", "Six Pistols", "Beach Boy", "Mr. President", "Sticky Fingers", "Anubis", "Red Hot Chili Pepper", "Scary Monsters", "The World Alternate Universe", "D4C", "Tusk ACT 1", "Soft & Wet"}
+
+for _, stand in pairs(standNames) do
+    StandSelectSection:Toggle({
+        Flag = "Stand_" .. stand:gsub("%s", ""),
+        Title = stand,
+        Default = false,
+        Callback = function(State)
+            if State then
+                if not Util:FindTable("Stands", stand) then
+                    Util:InsertTable("Stands", stand)
+                end
+            else
+                Util:RemoveTable("Stands", stand)
+            end
+        end
+    })
+end
+
+local InfoSection = StandFarmTab:Section({
+    Title = "Stand Info"
+})
+
+local PityLabel = InfoSection:Label({
+    Title = "Pity: 0 (1%)"
+})
+
+local StandLabel = InfoSection:Label({
+    Title = "Stand: None"
+})
+
+local ShinyLabel = InfoSection:Label({
+    Title = "Shiny: None"
+})
+
+task.spawn(function()
+    while task.wait(1) do
+        pcall(function()
+            local pity = Util:GetPlayer().PlayerStats.PityCount.Value
+            PityLabel:UpdateAsset("Pity: " .. pity .. " (" .. ((pity * 0.04) + 1) .. "%)")
+            StandLabel:UpdateAsset("Stand: " .. Util:CheckStand())
+            ShinyLabel:UpdateAsset("Shiny: " .. (Util:CheckShiny() or "None"))
+        end)
+    end
+end)
+
+task.spawn(function()
+    while task.wait() do
+        if Util:GetState("Stand Farming") and Util:GetState("Arrow Pity Farm") then
+            local targetPity = Util:GetInt("Pity Amount")
+            local currentPity = Util:GetPlayer().PlayerStats.PityCount.Value
+            
+            if currentPity >= targetPity then
+                Util:GetPlayer():Kick("Reached target pity: " .. targetPity)
+            end
+            
+            if Util:HasStand() and currentPity < targetPity then
+                Util:UseRoka()
+                repeat task.wait() until not Util:HasStand()
+            elseif not Util:HasStand() then
+                Util:Stats()
+                Util:UseArrow()
+                repeat task.wait() until Util:HasStand()
+            end
+        end
+        
+        if Util:GetState("Rib Farm") and Util:GetState("Rib Pity Farm") then
+            local targetPity = Util:GetInt("Pity Amount")
+            local currentPity = Util:GetPlayer().PlayerStats.PityCount.Value
+            
+            if currentPity >= targetPity then
+                Util:GetPlayer():Kick("Reached target pity: " .. targetPity)
+            end
+            
+            Util:Stats()
+            Util:UseRib()
+            repeat task.wait() until Util:HasStand()
+        end
+    end
+end)
+
+Window:Notify({
+    Title = "Stand Farming",
+    Content = "Script loaded successfully!",
+    Icon = "check"
+})

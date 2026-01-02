@@ -1,0 +1,668 @@
+oldMagnitude = hookmetamethod(game, "__index", newcclosure(function(self, index)
+    local callingScript = getcallingscript()
+    if not checkcaller() and index == "magnitude" and tostring(callingScript) == "ItemSpawn" then
+        return 0
+    end
+    return oldMagnitude(self, index)
+end))
+
+-- Remote event bypass
+local UzuKeeIsRetardedAndDoesntKnowHowToMakeAnAntiCheatOnTheServerSideAlsoVexStfuIKnowTheCodeIsBadYouDontNeedToTellMe = "  ___XP DE KEY"
+local oldNc
+oldNc = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local Method = getnamecallmethod()
+    local Args = {...}
+    
+    if not checkcaller() and rawequal(self.Name, "Returner") and rawequal(Args[1], "idklolbrah2de") then
+        return UzuKeeIsRetardedAndDoesntKnowHowToMakeAnAntiCheatOnTheServerSideAlsoVexStfuIKnowTheCodeIsBadYouDontNeedToTellMe
+    end
+    
+    return oldNc(self, ...)
+end))
+
+-- Main Script
+local WindUI
+do
+    local ok, result = pcall(function()
+        return require("./src/Init")
+    end)
+    if ok then
+        WindUI = result
+    else
+        WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/refs/heads/main/dist/main.lua "))()
+    end
+end
+local Window = WindUI:CreateWindow({
+    Title = "YBA Level Farm",
+    Icon = "arrow-up",
+    Author = "by Azure",
+    Folder = "yba_level_farm",
+    NewElements = true,
+    HideSearchBar = false,
+    OpenButton = {
+        Title = "Open UI",
+        CornerRadius = UDim.new(1,0),
+        StrokeThickness = 3,
+        Enabled = true,
+        Draggable = true,
+        OnlyMobile = false,
+        Color = ColorSequence.new(
+            Color3.fromHex("#30FF6A"),
+            Color3.fromHex("#e7ff2f")
+        )
+    }
+})
+Window:SetToggleKey(Enum.KeyCode.K)
+local function notify(title, message)
+    title = title or "YBA Level Farm"
+    WindUI:Notify({
+        Title = title,
+        Content = message
+    })
+end
+
+-- Level Farm Module
+local LevelFarm = (function()
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local Workspace = game:GetService("Workspace")
+    local LocalPlayer = Players.LocalPlayer
+    local Config = {
+        QuestCheckDelay = 1,
+        KillLoopDelay = 0.5,
+        ItemCollectionDelay = 0.6,
+        EnemyDistance = 2,
+        ApproachStepSize = 2,
+        ApproachDelay = 0.01,
+        CloseDistance = 10,
+        MaxPunches = 20,
+        IgnoreDuration = 5,
+    }
+    local FarmState = {
+        Active = false,
+        CurrentQuest = nil,
+        CompletedQuest = false,
+    }
+    
+    -- NEW: Global noclip connection variable
+    local noclipConnection = nil
+    
+    local Util = {}
+    Util.IgnoreList = {} -- enemy -> expireTick
+    
+    function Util:GetCharacter()
+        return LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    end
+    
+    function Util:GetHRP()
+        local Character = self:GetCharacter()
+        return Character and Character:FindFirstChild("HumanoidRootPart")
+    end
+    
+    function Util:GetHumanoid()
+        local Character = self:GetCharacter()
+        return Character and Character:FindFirstChildWhichIsA("Humanoid")
+    end
+    
+    function Util:CountItem(Item)
+        local Backpack = LocalPlayer.Backpack
+        local Count = 0
+        for _, v in pairs(Backpack:GetChildren()) do
+            if v.Name == Item then Count = Count + 1 end
+        end
+        local Char = self:GetCharacter()
+        if Char and Char:FindFirstChildWhichIsA("Tool") and Char:FindFirstChildWhichIsA("Tool").Name == Item then
+            Count = Count + 1
+        end
+        return Count
+    end
+    
+    function Util:HasStand()
+        return LocalPlayer.PlayerStats.Stand.Value ~= "None"
+    end
+    
+    function Util:EquipStand()
+        local Character = self:GetCharacter()
+        if Character and Character:FindFirstChild("RemoteFunction") and not Character:FindFirstChild("SummonedStand").Value then
+            Character.RemoteFunction:InvokeServer("ToggleStand", "Toggle")
+        end
+    end
+    
+    function Util:UseMove(Move)
+        local Char = self:GetCharacter()
+        if Char and Char:FindFirstChild("RemoteFunction") then
+            Char.RemoteFunction:InvokeServer("Attack", Move)
+        end
+    end
+    
+    function Util:GetQuest(NPC)
+        local DialogueName = NPC:FindFirstChild("Dialogue")
+        local Character = self:GetCharacter()
+        if DialogueName and Character and Character:FindFirstChild("RemoteEvent") then
+            DialogueName = DialogueName.Value
+            local Event = Character.RemoteEvent
+            for i = 1, 10 do
+                Event:FireServer("EndDialogue", {
+                    ["NPC"] = DialogueName,
+                    ["Option"] = "Option1",
+                    ["Dialogue"] = "Dialogue" .. i
+                })
+            end
+        end
+    end
+    
+    -- NEW: Global noclip enable function
+    local function enableNoclip()
+        if noclipConnection then return end
+        noclipConnection = RunService.Stepped:Connect(function()
+            local Character = Util:GetCharacter()
+            if Character then
+                for _, v in pairs(Character:GetDescendants()) do
+                    if v:IsA("BasePart") then
+                        v.CanCollide = false
+                    end
+                end
+            end
+        end)
+    end
+    
+    -- NEW: Global noclip disable function
+    local function disableNoclip()
+        if noclipConnection then
+            noclipConnection:Disconnect()
+            noclipConnection = nil
+        end
+        -- Restore collision
+        local Character = Util:GetCharacter()
+        if Character then
+            for _, v in pairs(Character:GetDescendants()) do
+                if v:IsA("BasePart") then
+                    v.CanCollide = true
+                end
+            end
+        end
+    end
+    
+    function Util:MoveTo(target)
+        local Character = self:GetCharacter()
+        local HRP = self:GetHRP()
+        if not (Character and HRP and target) then return end
+        
+        -- REMOVED: Local noclip connection (now handled globally)
+        while (HRP.Position - target.Position).Magnitude > Config.CloseDistance and FarmState.Active do
+            local direction = (target.Position - HRP.Position).Unit
+            HRP.CFrame = CFrame.new(HRP.Position + direction * Config.ApproachStepSize)
+            task.wait(Config.ApproachDelay)
+        end
+        -- REMOVED: clipConn:Disconnect()
+    end
+    
+    -- robust alive-check (handles Humanoid or Health NumberValue, checks rootpart and parent)
+    local function isAlive(enemy)
+        if not enemy or not enemy.Parent then return false end
+        local hrp = enemy:FindFirstChild("HumanoidRootPart")
+        if not hrp then return false end
+        local humanoid = enemy:FindFirstChildWhichIsA("Humanoid")
+        if humanoid then
+            -- prefer Humanoid.Health if present
+            if humanoid.Health and humanoid.Health > 0 then
+                return true
+            end
+            local ok, state = pcall(function() return humanoid:GetState() end)
+            if ok and state and state ~= Enum.HumanoidStateType.Dead then
+                return true
+            end
+        end
+        local healthVal = enemy:FindFirstChild("Health")
+        if healthVal and typeof(healthVal.Value) == "number" and healthVal.Value > 0 then
+            return true
+        end
+        return false
+    end
+    
+    -- find the nearest ALIVE enemy with given name (skips temporarily-ignored enemies)
+    local function findNearestEnemyByName(name)
+        local hrp = Util:GetHRP()
+        if not hrp then return nil end
+        local nearest, nearestDist = nil, math.huge
+        for _, e in pairs(Workspace.Living:GetChildren()) do
+            if e.Name == name then
+                -- skip if in ignore list and not yet expired
+                local ignoreExpiry = Util.IgnoreList[e]
+                if ignoreExpiry and tick() < ignoreExpiry then
+                    -- skip this enemy for now
+                    continue
+                else
+                    -- clean up expired entry
+                    Util.IgnoreList[e] = nil
+                end
+                local eh = e:FindFirstChild("HumanoidRootPart")
+                if eh and isAlive(e) then
+                    local d = (hrp.Position - eh.Position).Magnitude
+                    if d < nearestDist then
+                        nearest = e
+                        nearestDist = d
+                    end
+                end
+            end
+        end
+        return nearest
+    end
+    
+    function Util:IgnoreEnemy(enemy, duration)
+        if not enemy then return end
+        Util.IgnoreList[enemy] = tick() + (duration or Config.IgnoreDuration)
+    end
+    
+    function Util:Kill(Enemy)
+        if not Enemy then return end
+        if not isAlive(Enemy) then return end
+        local EnemyHRP = Enemy:FindFirstChild("HumanoidRootPart")
+        if not EnemyHRP then return end
+        local Character = self:GetCharacter()
+        if not Character then return end
+        local OldPos = self:GetHRP() and self:GetHRP().CFrame or nil
+        
+        -- REMOVED: Local noclip connection (now handled globally)
+        
+        -- now continuously "stick" to the back of the enemy while alive
+        local stickConn
+        stickConn = RunService.Heartbeat:Connect(function()
+            if not (FarmState.Active and isAlive(Enemy)) then
+                return
+            end
+            Character = self:GetCharacter()
+            local HRP = self:GetHRP()
+            if not (Character and HRP and EnemyHRP) then return end
+            
+            -- Stand position: behind enemy
+            local standSuccess, standPos = pcall(function()
+                return EnemyHRP.Position - EnemyHRP.CFrame.LookVector * Config.EnemyDistance
+            end)
+            if not standSuccess or not standPos then return end
+            standPos = standPos + Vector3.new(0, 1.5, 0)
+            local standCFrame = CFrame.new(standPos, standPos + EnemyHRP.CFrame.LookVector)
+            
+            -- Character position: under enemy
+            local charSuccess, underPos = pcall(function()
+                return EnemyHRP.Position - Vector3.new(0, Config.EnemyDistance + 10, 0)
+            end)
+            if not charSuccess or not underPos then return end
+            local charCFrame = CFrame.new(underPos, underPos + EnemyHRP.CFrame.LookVector)
+            
+            -- Position stand
+            if Character:FindFirstChild("StandMorph") and Character.StandMorph.PrimaryPart then
+                pcall(function()
+                    Character.StandMorph.PrimaryPart.CFrame = standCFrame
+                end)
+            end
+            
+            -- Position character
+            pcall(function()
+                HRP.CFrame = charCFrame
+                -- remove client-side velocity objects if present
+                for _, inst in pairs(HRP:GetChildren()) do
+                    if inst:IsA("BodyVelocity") or inst:IsA("BodyAngularVelocity") or inst:IsA("BodyPosition") then
+                        inst:Destroy()
+                    end
+                end
+            end)
+            
+            -- Always view stand
+            local Camera = Workspace.CurrentCamera
+            local stand = Character:FindFirstChild("StandMorph")
+            if stand then
+                local standHead = stand:FindFirstChild("Head")
+                if standHead then
+                    Camera.CameraSubject = standHead
+                end
+            end
+        end)
+        -- determine if we should apply punch limit for this quest
+        local applyLimit = (FarmState.CurrentQuest == "Officer Sam [Lvl. 1+]" or FarmState.CurrentQuest == "Deputy Bertrude [Lvl. 10+]")
+        -- attack until enemy dies OR farm stops OR enemy removed OR punch limit reached (if applicable)
+        local punches = 0
+        while FarmState.Active do
+            if not isAlive(Enemy) then break end
+            if not Enemy.Parent then break end
+            Character = self:GetCharacter()
+            if not Character then break end
+            local humanoid = Character:FindFirstChildWhichIsA("Humanoid")
+            if humanoid and humanoid.Health > 0 then
+                if self:HasStand() then
+                    self:EquipStand()
+                    task.wait(0.2)
+                end
+                -- perform m1
+                task.spawn(function() self:UseMove("m1") end)
+                punches = punches + 1
+                -- if we should apply limit and we've reached the configured number of punches, stop attacking this enemy and ignore it briefly
+                if applyLimit and punches >= Config.MaxPunches then
+                    -- add a short ignore so farm picks a different enemy
+                    Util:IgnoreEnemy(Enemy, Config.IgnoreDuration)
+                    break
+                end
+            else
+                LocalPlayer.CharacterAdded:Wait()
+            end
+            task.wait(0.12)
+        end
+        -- cleanup
+        if stickConn then
+            stickConn:Disconnect()
+            stickConn = nil
+        end
+        -- REMOVED: clipConn:Disconnect()
+        task.wait(0.8)
+        if OldPos and self:GetHRP() then
+            pcall(function() self:GetHRP().CFrame = OldPos end)
+        end
+    end
+    
+    function Util:Collect(Item)
+        local Character = self:GetCharacter()
+        local HRP = self:GetHRP()
+        if not (Item and Item.PrimaryPart and Character and HRP) then return end
+        local OldCF = HRP.CFrame
+        
+        -- REMOVED: Local noclip connection (now handled globally)
+        
+        HRP.CFrame = Item.PrimaryPart.CFrame - Vector3.new(0, 10, 0)
+        task.wait(0.3)
+        local startTime = tick()
+        repeat
+            local prompt = Item:FindFirstChild("ProximityPrompt")
+            if prompt then
+                fireproximityprompt(prompt)
+            end
+            if Item.Parent == Workspace.Item_Spawns.Items then
+                HRP.CFrame = Item.PrimaryPart.CFrame - Vector3.new(0, 10, 0)
+            end
+            task.wait()
+        until Item.Parent ~= Workspace.Item_Spawns.Items or tick() - startTime >= 3.5
+        task.wait(0.6)
+        HRP.CFrame = OldCF
+        -- REMOVED: clipConn:Disconnect()
+    end
+    
+    -- Quest Database
+    local QuestInfo = {
+        ["Officer Sam [Lvl. 1+]"] = {Enemy = "Thug"},
+        ["Deputy Bertrude [Lvl. 10+]"] = {Enemy = "Corrupt Police"},
+        ["Abbacchoi's Partner [Lvl. 15+]"] = {Enemy = "Alpha Thug"},
+        ["Dracula [Lvl. 20+]"] = {Enemy = "Zombie Henchman"},
+        ["William Zeppeli [Lvl. 25+]"] = {Enemy = "Vampire"},
+        ["Doppio [Lvl. 30+]"] = {Enemy = "Dio"},
+        ["Dio [Lvl. 35+]"] = {Enemy = "Jotaro"},
+    }
+    
+    local function ParseQuests()
+        local parsed = {}
+        for _, v in pairs(Workspace.Dialogues:GetChildren()) do
+            if v.Name:find("Lvl") and not v.Name:find("Abbacchio") and not v.Name:find("Darius") and not v.Name:find("Pucci") and not v.Name:find("Kars") then
+                table.insert(parsed, v.Name)
+            end
+        end
+        return parsed
+    end
+    
+    local ParsedQuests = ParseQuests()
+    Workspace.Dialogues.ChildAdded:Connect(function(child)
+        if child.Name:find("Lvl") then
+            table.insert(ParsedQuests, child.Name)
+        end
+    end)
+    
+    local function GetBestQuest()
+        local playerLevel = LocalPlayer.PlayerStats.Level.Value
+        local bestQuest, highestReq = nil, 0
+        for _, questName in pairs(ParsedQuests) do
+            if questName == "Abbacchoi's Partner [Lvl. 15+]" then continue end
+            local levelReq = tonumber(questName:gsub("%D", ""))
+            if levelReq and levelReq <= playerLevel and levelReq >= highestReq then
+                highestReq = levelReq
+                bestQuest = questName
+            end
+        end
+        return bestQuest
+    end
+    
+    local function FarmLoop()
+        local connection = LocalPlayer.PlayerGui.HUD.ChildAdded:Connect(function(child)
+            if child.Name == "QuestCompleted" then
+                FarmState.CompletedQuest = true
+            end
+        end)
+        while FarmState.Active do
+            local questName = FarmState.CurrentQuest or GetBestQuest()
+            if not questName then
+                warn("No available quests found!")
+                break
+            end
+            local questNPC = Workspace.Dialogues:FindFirstChild(questName)
+            if not questNPC then
+                warn("Quest NPC not found:", questName)
+                break
+            end
+            local questData = QuestInfo[questName]
+            if not questData then
+                warn("Quest data not found:", questName)
+                break
+            end
+            if FarmState.CompletedQuest then
+                Util:GetQuest(questNPC)
+                FarmState.CompletedQuest = false
+                task.wait(1)
+            end
+            if questData.Enemy then
+                while LocalPlayer.PlayerStats.QuestProgress.Value < LocalPlayer.PlayerStats.QuestMaxProgress.Value and FarmState.Active do
+                    local enemy = findNearestEnemyByName(questData.Enemy)
+                    if enemy and isAlive(enemy) then
+                        pcall(function() Util:Kill(enemy) end)
+                        -- small wait to allow removal/respawn and avoid re-targeting the same dead model
+                        task.wait(0.4)
+                    else
+                        -- no alive enemies currently found; wait briefly then try again
+                        task.wait(Config.KillLoopDelay)
+                    end
+                end
+                FarmState.CompletedQuest = true
+            elseif questData.Item then
+                while Util:CountItem(questData.Item) < questData.Amount and FarmState.Active do
+                    for _, item in pairs(Workspace.Item_Spawns.Items:GetChildren()) do
+                        if item.Name == questData.Item then
+                            Util:Collect(item)
+                            break
+                        end
+                    end
+                    task.wait(Config.KillLoopDelay)
+                end
+                if Util:CountItem(questData.Item) >= questData.Amount then
+                    Util:GetQuest(questNPC)
+                    task.wait(1)
+                end
+                FarmState.CompletedQuest = true
+            end
+            task.wait(Config.QuestCheckDelay)
+        end
+        connection:Disconnect()
+    end
+    
+    local LevelFarm = {}
+    
+    -- MODIFIED: Added noclip enable call
+    function LevelFarm.Start(options)
+        if FarmState.Active then
+            warn("Level farm already running!")
+            return
+        end
+        options = options or {}
+        FarmState.Active = true
+        FarmState.CurrentQuest = options.quest
+        enableNoclip() -- Enable noclip when farm starts
+        task.spawn(FarmLoop)
+        notify("Level Farm", "Started farming quests")
+    end
+    
+    -- MODIFIED: Added noclip disable call
+    function LevelFarm.Stop()
+        FarmState.Active = false
+        FarmState.CurrentQuest = nil
+        FarmState.CompletedQuest = false
+        disableNoclip() -- Disable noclip when farm stops
+        -- reset camera if was viewing stand
+        local Camera = Workspace.CurrentCamera
+        local humanoid = Util:GetHumanoid()
+        if humanoid then
+            Camera.CameraSubject = humanoid
+        end
+        notify("Level Farm", "Stopped")
+    end
+    
+    function LevelFarm.IsActive()
+        return FarmState.Active
+    end
+    
+    -- external setters/getters for UI
+    function LevelFarm.SetEnemyDistance(value)
+        Config.EnemyDistance = value
+    end
+    
+    function LevelFarm.GetEnemyDistance()
+        return Config.EnemyDistance
+    end
+    
+    -- NEW: setters/getters for punches per enemy
+    function LevelFarm.SetMaxPunches(value)
+        Config.MaxPunches = math.max(1, math.floor(value))
+    end
+    
+    function LevelFarm.GetMaxPunches()
+        return Config.MaxPunches
+    end
+    
+    -- expose Util:GetHRP if UI or helpers try to call it
+    LevelFarm.GetHRP = function() return Util:GetHRP() end
+    return LevelFarm
+end)()
+
+-- UI
+local LevelFarmTab = Window:Tab({ Title = "Level Farm", Icon = "arrow-up" })
+local selectedQuest = "Officer Sam [Lvl. 1+]"
+LevelFarmTab:Dropdown({
+    Flag = "SelectQuest",
+    Title = "Select Quest",
+    Values = {"Officer Sam [Lvl. 1+]", "Deputy Bertrude [Lvl. 10+]", "Abbacchoi's Partner [Lvl. 15+]", "Dracula [Lvl. 20+]", "William Zeppeli [Lvl. 25+]", "Doppio [Lvl. 30+]", "Dio [Lvl. 35+]"},
+    Value = "Officer Sam [Lvl. 1+]",
+    Callback = function(option)
+        selectedQuest = option
+    end
+})
+LevelFarmTab:Space()
+LevelFarmTab:Slider({
+    Flag = "EnemyDistance",
+    Title = "Distance from Enemy",
+    Min = 0.5,
+    Max = 5,
+    Default = LevelFarm.GetEnemyDistance and LevelFarm.GetEnemyDistance() or 2,
+    Callback = function(value)
+        LevelFarm.SetEnemyDistance(value)
+    end
+})
+LevelFarmTab:Space()
+LevelFarmTab:Slider({
+    Flag = "MaxPunches",
+    Title = "Max Punches per Enemy",
+    Min = 1,
+    Max = 50,
+    Default = LevelFarm.GetMaxPunches and LevelFarm.GetMaxPunches() or 20,
+    Callback = function(value)
+        LevelFarm.SetMaxPunches(value)
+    end
+})
+LevelFarmTab:Space()
+LevelFarmTab:Toggle({
+    Flag = "LevelFarm",
+    Title = "Enable Level Farm",
+    Default = false,
+    Callback = function(value)
+        if value then
+            LevelFarm.Start({quest = selectedQuest})
+        else
+            LevelFarm.Stop()
+        end
+    end
+})
+
+-- Auto Prestige Tab
+local AutoPrestigeTab = Window:Tab({ Title = "Auto Prestige", Icon = "star" })
+
+-- State for Auto Prestige
+local AutoPrestigeState = {
+    waitingForReenable = false
+}
+
+AutoPrestigeTab:Space()
+AutoPrestigeTab:Toggle({
+    Flag = "AutoPrestige",
+    Title = "Enable Auto Prestige",
+    Default = false,
+    Callback = function(value)
+        if value then
+            if not AutoPrestigeState.waitingForReenable then
+                -- First enable: Show warning
+                notify("Auto Prestige", "Please don't equip your best stand. Equip a stand that doesn't have a rarity. Re-enable to continue.")
+                AutoPrestigeState.waitingForReenable = true
+                
+                -- Disable Level Farm if active for safety
+                if LevelFarm.IsActive() then
+                    LevelFarm.Stop()
+                    local levelFarmToggle = Window:GetElement("LevelFarm")
+                    if levelFarmToggle then
+                        levelFarmToggle:SetValue(false)
+                    end
+                    notify("Auto Prestige", "Level Farm auto-disabled for safety.")
+                end
+            else
+                -- Re-enable: Execute prestige script
+                AutoPrestigeState.waitingForReenable = false
+                
+                -- Black screen GUI
+                local screenGui = Instance.new("ScreenGui")
+                screenGui.Name = "PrestigeBlackout"
+                screenGui.ResetOnSpawn = false
+                screenGui.IgnoreGuiInset = true
+                screenGui.Parent = game:GetService("CoreGui")
+                
+                local frame = Instance.new("Frame")
+                frame.Size = UDim2.new(1, 0, 1, 0)
+                frame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                frame.BackgroundTransparency = 0
+                frame.BorderSizePixel = 0
+                frame.Parent = screenGui
+                
+                -- Execute the prestige script
+                notify("Auto Prestige", "Executing prestige script...")
+                
+                local success, err = pcall(function()
+                    loadstring(game:HttpGet("https://raw.githubusercontent.com/Vodi4kasy1/Moon/refs/heads/main/sex"))()
+                end)
+                
+                if success then
+                    notify("Auto Prestige", "Prestige script executed!")
+                else
+                    notify("Auto Prestige", "Error: " .. tostring(err))
+                    -- Clean up black screen on error
+                    screenGui:Destroy()
+                end
+            end
+        else
+            -- Toggle disabled
+            if AutoPrestigeState.waitingForReenable then
+                notify("Auto Prestige", "Please switch to a non-rarity stand now.")
+            end
+        end
+    end
+})
+
+notify("YBA Level Farm", "Script loaded successfully!")

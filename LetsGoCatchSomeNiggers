@@ -1,0 +1,368 @@
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local teleportPositions = {
+    Check1_Start = Vector3.new(-2392.905273, 109.657051, -218.295471),
+    Check1_End = Vector3.new(-2392.849854, 109.655876, -222.808853),
+    Cashout = Vector3.new(-2360.978, 5, 132.696),
+    Check2_Start = Vector3.new(-2455.421631, 109.668243, -217.274750),
+    Check2_End = Vector3.new(-2450.619873, 109.652145, -218.080826),
+
+    Grass_Positions = {
+        Vector3.new(-1989.278931, 3.492603, 185.056839),
+        Vector3.new(-1985.558960, 3.339264, 185.222504),
+        Vector3.new(-1981.270630, 3.339264, 185.247269),
+        Vector3.new(-1975.049927, 3.339264, 185.247559),
+        Vector3.new(-1970.951172, 3.339264, 185.342468),
+        Vector3.new(-1967.600586, 3.339264, 185.292496)
+    },
+    Grass_Cashout = Vector3.new(-2004.763916, 3.339264, 196.580170)
+}
+
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoidRootPart = character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart")
+local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+player.CharacterAdded:Connect(function(newCharacter)
+    character = newCharacter
+    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    humanoid = character:FindFirstChildOfClass("Humanoid")
+end)
+
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local function pressKey(key, holdDuration)
+    if VirtualInputManager then
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, key, false, game)
+            if holdDuration and holdDuration > 0 then
+                wait(holdDuration)
+                VirtualInputManager:SendKeyEvent(false, key, false, game)
+            else
+                wait(0.1)
+                VirtualInputManager:SendKeyEvent(false, key, false, game)
+            end
+        end)
+    else
+        warn("VirtualInputManager not available.")
+    end
+end
+
+local function teleportTo(position)
+    if humanoidRootPart and position then
+        pcall(function() humanoidRootPart.CFrame = CFrame.new(position) end)
+        wait(0.12)
+    end
+end
+
+local isCashFarming = false
+local cashFarmLoop = nil
+
+local function startCashFarm()
+    isCashFarming = true
+
+    cashFarmLoop = coroutine.create(function()
+        while isCashFarming do
+            teleportTo(teleportPositions.Check1_Start)
+            pressKey(Enum.KeyCode.E, 7)
+
+            teleportTo(teleportPositions.Check1_End)
+            pressKey(Enum.KeyCode.E, 0)
+
+            teleportTo(teleportPositions.Cashout)
+            pressKey(Enum.KeyCode.E, 0)
+
+            teleportTo(teleportPositions.Check2_Start)
+            pressKey(Enum.KeyCode.E, 6)
+
+            teleportTo(teleportPositions.Check2_End)
+            pressKey(Enum.KeyCode.E, 0)
+
+            teleportTo(teleportPositions.Cashout)
+            pressKey(Enum.KeyCode.E, 0)
+
+            wait(0.5)
+        end
+    end)
+
+    coroutine.resume(cashFarmLoop)
+end
+
+local function stopCashFarm()
+    isCashFarming = false
+    if cashFarmLoop then
+        wait(0.5)
+    end
+end
+
+local HOLD_G_SECONDS = 7
+local DELIVER_TIMEOUT = 4     -- shortened timeout for "instant" delivery attempts
+local INVENTORY_KEYWORDS = { "grass" } -- lowercase keywords
+
+local function countGrassInContainer(container)
+    if not container then return 0 end
+    local count = 0
+    for _, item in pairs(container:GetChildren()) do
+        if item and item.Name and type(item.Name) == "string" then
+            local lname = item.Name:lower()
+            for _, kw in pairs(INVENTORY_KEYWORDS) do
+                if string.find(lname, kw) then
+                    count = count + 1
+                    break
+                end
+            end
+        end
+    end
+    return count
+end
+
+local function detectGrassInInventory()
+    local total = 0
+    total = total + countGrassInContainer(player:FindFirstChild("Backpack"))
+    total = total + countGrassInContainer(character)
+    local inv = player:FindFirstChild("Inventory") or player:FindFirstChild("inventory")
+    total = total + countGrassInContainer(inv)
+
+    local gui = player:FindFirstChild("PlayerGui")
+    if gui then
+        for _, child in pairs(gui:GetDescendants()) do
+            if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                local ok, txt = pcall(function() return child.Text end)
+                if ok and txt and type(txt) == "string" then
+                    local ltxt = txt:lower()
+                    for _, kw in pairs(INVENTORY_KEYWORDS) do
+                        if string.find(ltxt, kw) then
+                            total = total + 1
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return total
+end
+
+local function findGrassTool()
+    local function check(container)
+        if not container then return nil end
+        for _, obj in pairs(container:GetChildren()) do
+            if obj and obj:IsA("Tool") and obj.Name and type(obj.Name) == "string" then
+                local n = obj.Name:lower()
+                for _, kw in pairs(INVENTORY_KEYWORDS) do
+                    if string.find(n, kw) then
+                        return obj
+                    end
+                end
+            end
+        end
+        return nil
+    end
+    return check(character) or check(player:FindFirstChild("Backpack")) or check(player:FindFirstChild("Inventory")) or check(player:FindFirstChild("inventory"))
+end
+
+local function equipGrassAndSavePrevious()
+    if not character then return nil end
+    local prevTool = character:FindFirstChildOfClass("Tool")
+    local grassTool = findGrassTool()
+    if not grassTool then return prevTool end
+    if grassTool.Parent == character then return prevTool end
+    pcall(function()
+        if humanoid and humanoid.Parent then
+            humanoid:EquipTool(grassTool)
+            wait(0.06)
+        end
+    end)
+    if grassTool.Parent ~= character then
+        pcall(function() grassTool.Parent = character end)
+        wait(0.06)
+    end
+    return prevTool
+end
+
+local function restorePreviousTool(prevTool)
+    if not prevTool then return end
+    pcall(function()
+        if typeof(prevTool) == "Instance" then
+            local bp = player:FindFirstChild("Backpack")
+            if bp and bp:FindFirstChild(prevTool.Name) and humanoid then
+                humanoid:EquipTool(bp[prevTool.Name])
+                return
+            end
+            if prevTool.Parent == character and humanoid then
+                humanoid:EquipTool(prevTool)
+                return
+            end
+        else
+            local bp = player:FindFirstChild("Backpack")
+            if bp then
+                for _, c in pairs(bp:GetChildren()) do
+                    if c:IsA("Tool") then
+                        if humanoid then humanoid:EquipTool(c) end
+                        break
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function deliverGrassAndReturn(savedCFrame)
+    if not humanoidRootPart then return end
+    Rayfield:Notify({ Title = "Grass Detected", Content = "Delivering instantly...", Duration = 0.1 })
+
+    local prev = equipGrassAndSavePrevious()
+
+    teleportTo(teleportPositions.Grass_Cashout)
+
+    local start = tick()
+    repeat
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        end)
+
+        wait(0.06)
+
+        local remaining = 0
+        pcall(function() remaining = detectGrassInInventory() end)
+
+        if remaining == 0 then
+            -- delivered: immediate return
+            Rayfield:Notify({ Title = "Delivered", Content = "Returning now...", Duration = 0.1 })
+            break
+        end
+    until (tick() - start) > DELIVER_TIMEOUT
+
+    if savedCFrame and humanoidRootPart then
+        pcall(function() humanoidRootPart.CFrame = savedCFrame end)
+        wait(0.06)
+    end
+
+    restorePreviousTool(prev)
+end
+
+local isGrassFarming = false
+local grassLoop = nil
+
+local function startGrassFarm()
+    if isGrassFarming then return end
+    isGrassFarming = true
+
+    grassLoop = coroutine.create(function()
+        while isGrassFarming do
+            for idx = 1, #teleportPositions.Grass_Positions do
+                if not isGrassFarming then break end
+
+                local pos = teleportPositions.Grass_Positions[idx]
+                Rayfield:Notify({ Title = "Grass Farm", Content = "Going to pos " .. idx .. " / " .. #teleportPositions.Grass_Positions, Duration = 1.2 })
+                teleportTo(pos)
+                wait(0.08)
+
+                Rayfield:Notify({ Title = "Collecting", Content = "Holding G for " .. tostring(HOLD_G_SECONDS) .. "s at pos " .. idx, Duration = 1.4 })
+                pressKey(Enum.KeyCode.G, HOLD_G_SECONDS)
+                wait(0.12)
+
+                local foundCount = 0
+                pcall(function() foundCount = detectGrassInInventory() end)
+
+                if foundCount > 0 then
+                    local savedCFrame = nil
+                    pcall(function() savedCFrame = humanoidRootPart and humanoidRootPart.CFrame end)
+
+                    pcall(function() deliverGrassAndReturn(savedCFrame) end)
+
+                    wait(0.12)
+                else
+                    Rayfield:Notify({ Title = "No Grass", Content = "Moving to next pos", Duration = 0.9 })
+                    wait(0.12)
+                end
+            end
+            wait(0.0)
+        end
+    end)
+    coroutine.resume(grassLoop)
+end
+
+local function stopGrassFarm()
+    isGrassFarming = false
+    if grassLoop then wait(0.3) end
+end
+
+local Window = Rayfield:CreateWindow({
+    Name = "Niggers Farm",
+    LoadingTitle = "Nigger UI",
+    LoadingSubtitle = "Whats Good Niggers",
+    ConfigurationSaving = {
+        Enabled = false
+    },
+    KeySystem = false
+})
+
+local CashTab = Window:CreateTab("Cash Farm", 4483362458)
+
+CashTab:CreateToggle({
+    Name = "Cash Farm",
+    CurrentValue = false,
+    Flag = "CashFarmToggle",
+    Callback = function(Value)
+        if Value then
+            startCashFarm()
+            Rayfield:Notify({
+                Title = "Cash Farm Started",
+                Content = "Auto-farming locations enabled",
+                Duration = 3
+            })
+        else
+            stopCashFarm()
+            Rayfield:Notify({
+                Title = "Cash Farm Stopped",
+                Content = "Auto-farming disabled",
+                Duration = 3
+            })
+        end
+    end,
+})
+
+CashTab:CreateButton({
+    Name = "Close UI",
+    Callback = function()
+        stopCashFarm()
+        Rayfield:Destroy()
+    end,
+})
+
+local GrassTab = Window:CreateTab("Grass Farm", 4483362458)
+GrassTab:CreateToggle({
+    Name = "Grass Farm (Sequential)",
+    CurrentValue = false,
+    Flag = "GrassFarmToggle",
+    Callback = function(Value)
+        if Value then
+            startGrassFarm()
+            Rayfield:Notify({ Title = "Grass Farm Started", Content = "Sequential pos 1..6 enabled", Duration = 2.2 })
+        else
+            stopGrassFarm()
+            Rayfield:Notify({ Title = "Grass Farm Stopped", Content = "Sequential farm disabled", Duration = 1.8 })
+        end
+    end,
+})
+
+GrassTab:CreateSlider({
+    Name = "Hold G seconds",
+    Min = 1,
+    Max = 12,
+    Increment = 1,
+    Suffix = "s",
+    CurrentValue = HOLD_G_SECONDS,
+    Callback = function(val) HOLD_G_SECONDS = math.floor(val) end,
+})
+
+GrassTab:CreateButton({
+    Name = "Stop & Close UI",
+    Callback = function()
+        stopGrassFarm()
+        Rayfield:Destroy()
+    end,
+})
